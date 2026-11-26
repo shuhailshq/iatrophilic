@@ -8,9 +8,19 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="iatrophilic">
 <link rel="apple-touch-icon" href="icon-192.png">
+
+  <!-- Change the existing theme-color to match your exact background -->
+<meta name="theme-color" content="#060607">
+
+<!-- Add this new tag to tell the app to draw behind the status bar -->
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+
+<!-- Add this style block right after your fonts -->
   
 <style>:root{color-scheme:dark;--bg:#060607;--panel:#0d0d0f;--panel2:#131316;--line:#1c1c20;--text:#ececee;--muted:#7d7d86;--accent:#f2f2f4}
-*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:var(--bg);color:var(--text);font-family:"Space Grotesk","Sora","Segoe UI",system-ui,-apple-system,sans-serif;min-height:100vh;line-height:1.6;-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:"Space Grotesk","Sora","Segoe UI",system-ui,-apple-system,sans-serif;min-height:100vh;line-height:1.6;-webkit-font-smoothing:antialiased; padding-top: env(safe-area-inset-top, 0px);padding-bottom: env(safe-area-inset-bottom, 0px);}
+  
 .wrap{width:min(760px,calc(100% - 32px));margin:0 auto;padding:30px 0 70px}
 .top{display:flex;align-items:center;justify-content:space-between;margin:6px 0 40px}.brand{display:inline-flex;align-items:center;font-weight:700;letter-spacing:.14em;text-transform:lowercase;font-size:20px;cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent;line-height:1}
 .brand-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--accent);margin-left:3px;transform:translate3d(0,1px,0);will-change:transform}
