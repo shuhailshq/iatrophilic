@@ -169,16 +169,46 @@
       .searchrow input::placeholder {
         color: #55555c;
       }
-      .clear{position:relative;display:inline-flex;align-items:center;justify-content:center;gap:6px;height:36px;padding:0 13px;border:1px solid #2a2a30;border-radius:999px;background:linear-gradient(180deg,#1a1a1e 0%,#121215 100%);color:#b9b9c2;cursor:pointer;font:inherit;font-size:12px;font-weight:500;letter-spacing:.04em;white-space:nowrap;overflow:hidden;-webkit-tap-highlight-color:transparent;touch-action:manipulation;box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 1px 2px rgba(0,0,0,.35);transition:color .22s ease,border-color .22s ease,background .22s ease,box-shadow .22s ease,transform .16s cubic-bezier(.2,.8,.2,1)}
-.clear svg{width:13px;height:13px;flex:none;transition:transform .28s cubic-bezier(.2,.8,.2,1)}
-.clear::after{content:"";position:absolute;inset:0;border-radius:inherit;background:radial-gradient(circle at 50% 0%,rgba(255,255,255,.14),transparent 68%);opacity:0;transition:opacity .22s ease;pointer-events:none}
-.clear:hover{color:#f2f2f4;border-color:#3b3b44;background:linear-gradient(180deg,#232329 0%,#17171b 100%);box-shadow:inset 0 1px 0 rgba(255,255,255,.09),0 4px 14px rgba(0,0,0,.4);transform:translateY(-1px)}
-.clear:hover::after{opacity:1}
-.clear:hover svg{transform:rotate(90deg)}
-.clear:active{transform:scale(.94);box-shadow:inset 0 1px 3px rgba(0,0,0,.45);transition-duration:.08s}
-.clear:focus-visible{outline:2px solid #6d6d78;outline-offset:2px}
-@media(max-width:400px){.clear{padding:0 11px}.clear span{display:none}}
-      
+      .clear {
+        flex-shrink: 0;
+        appearance: none;
+        -webkit-appearance: none;
+        border: 1px solid transparent;
+        background: var(--panel2);
+        color: var(--muted);
+        border-radius: 99px;
+        padding: 8px 15px;
+        cursor: pointer;
+        font: inherit;
+        font-size: 12px;
+        line-height: 1;
+        letter-spacing: 0.06em;
+        outline: 0;
+        user-select: none;
+        touch-action: manipulation;
+        -webkit-tap-highlight-color: transparent;
+        transition:
+          transform 0.16s cubic-bezier(0.22, 1, 0.36, 1),
+          background-color 0.2s,
+          border-color 0.2s,
+          color 0.2s;
+      }
+      @media (hover: hover) {
+        .clear:hover {
+          background: #18181c;
+          color: var(--text);
+        }
+      }
+      .clear:active {
+        transform: scale(0.92);
+        background: #1f1f24;
+        border-color: #3a3a42;
+        color: var(--text);
+      }
+      .clear:focus-visible {
+        border-color: #4a4a52;
+        color: var(--text);
+      }
       .suggestions {
         display: none;
         position: absolute;
@@ -330,6 +360,31 @@
       .chip:hover {
         border-color: #55555c;
       }
+      .tag {
+        padding: 8px 14px;
+        font-size: 13.5px;
+        outline: 0;
+        user-select: none;
+        touch-action: manipulation;
+        -webkit-tap-highlight-color: transparent;
+        transition:
+          transform 0.16s cubic-bezier(0.22, 1, 0.36, 1),
+          background-color 0.2s,
+          border-color 0.2s;
+      }
+      @media (hover: hover) {
+        .tag:hover {
+          background: #18181c;
+        }
+      }
+      .tag:active {
+        transform: scale(0.94);
+        background: #18181c;
+        border-color: #52525b;
+      }
+      .tag:focus-visible {
+        border-color: #7d7d86;
+      }
       .actions {
         display: flex;
         margin-top: 14px;
@@ -421,9 +476,9 @@
             autocomplete="off"
             autocapitalize="none"
             spellcheck="false"
-            placeholder="Search a term"
+            placeholder="Search A Medical Term..."
             aria-label="Medical term"
-          /><button class="clear" id="clearBtn" type="button" aria-label="Clear search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg><span>Clear</span></button>
+          /><button class="clear" id="clearBtn" type="button">Clear</button>
         </div>
         <div class="suggestions" id="suggestions"></div>
       </section>
@@ -1459,19 +1514,141 @@
         result.append(c);
         return c;
       }
-      function renderSuggestions() {
-        const q = normalise(input.value);
+      // ---- NLM Clinical Tables (conditions) ----
+      const API = "https://clinicaltables.nlm.nih.gov/api/conditions/v3/search";
+      const EF =
+        "primary_name,consumer_name,synonyms,icd10cm,icd10cm_codes,term_icd9_code,term_icd9_text";
+      const scoreOf = (q, k) =>
+        k === q
+          ? 0
+          : k.startsWith(q)
+            ? 1
+            : k.includes(q)
+              ? 2
+              : 3 + distance(q, k);
+      const strs = (v) =>
+        (Array.isArray(v) ? v.flat(Infinity) : v == null ? [] : [v])
+          .filter((x) => typeof x === "string" && x.trim())
+          .map((x) => x.trim());
+      const NAMECACHE = new Map(),
+        RECCACHE = new Map();
+      // light call: names only (used for suggestions and spelling candidates)
+      async function apiNames(terms, max) {
+        const key = terms + "|" + max;
+        if (NAMECACHE.has(key)) return NAMECACHE.get(key);
+        const d = await getJSON(
+          API +
+            "?terms=" +
+            encodeURIComponent(terms) +
+            "&maxList=" +
+            max +
+            "&df=consumer_name",
+          5000,
+        );
+        const out = (d[3] || [])
+          .map((r) => String((r && r[0]) || "").trim())
+          .filter(Boolean);
+        NAMECACHE.set(key, out);
+        return out;
+      }
+      // full call: names, synonyms and ICD codes (used for the result details)
+      async function apiSearch(terms, max) {
+        const key = terms + "|" + max;
+        if (RECCACHE.has(key)) return RECCACHE.get(key);
+        const d = await getJSON(
+          API +
+            "?terms=" +
+            encodeURIComponent(terms) +
+            "&maxList=" +
+            max +
+            "&df=consumer_name&ef=" +
+            EF,
+        );
+        const ex = d[2] || {};
+        const out = (d[3] || []).map((row, i) => {
+          const g = (f) => (ex[f] || [])[i];
+          let icd10 = (Array.isArray(g("icd10cm")) ? g("icd10cm") : [])
+            .filter((c) => c && c.code)
+            .map((c) => ({ code: String(c.code), name: String(c.name || "") }));
+          if (!icd10.length)
+            icd10 = strs(String(g("icd10cm_codes") || "").split(",")).map(
+              (c) => ({ code: c, name: "" }),
+            );
+          return {
+            name: String((row && row[0]) || g("consumer_name") || "").trim(),
+            primary: String(g("primary_name") || "").trim(),
+            synonyms: strs(g("synonyms")),
+            icd10,
+            icd9: {
+              code: strs(g("term_icd9_code"))[0] || "",
+              text: strs(g("term_icd9_text"))[0] || "",
+            },
+          };
+        });
+        RECCACHE.set(key, out);
+        return out;
+      }
+      // direct matches first; if none, spelling-tolerant candidates ranked by edit distance
+      async function suggestNames(q) {
+        const direct = await apiNames(q, 8);
+        if (direct.length)
+          return direct.map((n) => ({
+            n,
+            s: Math.min(scoreOf(q, normalise(n)), 2.5),
+          }));
+        const words = q.split(" "),
+          last = words.pop(),
+          base = words.join(" ");
+        if (last.length < 4) return [];
+        const tries = [
+          ...new Set([
+            last.slice(0, -1),
+            last.slice(0, -2),
+            last.slice(0, 4),
+            last.slice(0, 3),
+          ]),
+        ].filter((p) => p.length >= 3 && p.length < last.length);
+        const limit = Math.max(2, Math.floor(q.length / 4));
+        for (const p of tries) {
+          const names = await apiNames((base + " " + p).trim(), 100);
+          const near = names
+            .map((n) => {
+              const k = normalise(n);
+              return {
+                n,
+                d: Math.min(distance(q, k), distance(q, k.slice(0, q.length))),
+              };
+            })
+            .filter((x) => x.d <= limit)
+            .sort((a, b) => a.d - b.d);
+          if (near.length)
+            return near.slice(0, 8).map((x) => ({ n: x.n, s: 3 + x.d }));
+        }
+        return [];
+      }
+      function mergeNames(items, limit) {
+        const m = new Map();
+        for (const x of items) {
+          const k = normalise(x.n);
+          if (!k) continue;
+          const p = m.get(k);
+          if (!p || x.s < p.s) m.set(k, { k, s: x.s });
+        }
+        return [...m.values()]
+          .filter((x) => x.s <= 5)
+          .sort((a, b) => a.s - b.s || a.k.localeCompare(b.k))
+          .slice(0, limit);
+      }
+      let sugToken = 0,
+        sugTimer = 0;
+      function paintSuggestions(items) {
+        const list = mergeNames(items, 8);
         suggestions.replaceChildren();
-        if (q.length < 2) {
+        if (!list.length) {
           suggestions.classList.remove("show");
           return;
         }
-        const hits = rankTerms(q);
-        if (!hits.length) {
-          suggestions.classList.remove("show");
-          return;
-        }
-        for (const h of hits) {
+        for (const h of list) {
           const b = make("button", "suggestion");
           b.type = "button";
           b.append(make("span", "", h.k));
@@ -1480,6 +1657,123 @@
         }
         suggestions.classList.add("show");
       }
+      function renderSuggestions() {
+        const q = normalise(input.value),
+          my = ++sugToken;
+        clearTimeout(sugTimer);
+        if (q.length < 2) {
+          suggestions.replaceChildren();
+          suggestions.classList.remove("show");
+          return;
+        }
+        const local = rankTerms(q).map((h) => ({ n: h.k, s: h.score }));
+        paintSuggestions(local);
+        sugTimer = setTimeout(async () => {
+          try {
+            const api = await suggestNames(q);
+            if (my !== sugToken || !api.length) return;
+            if (document.activeElement !== input) return;
+            paintSuggestions(local.concat(api));
+          } catch (e) {}
+        }, 220);
+      }
+      const sameTerm = (a, b) => {
+        const x = normalise(a),
+          y = normalise(b);
+        return x === y || x.replace(/s$/, "") === y.replace(/s$/, "");
+      };
+      function chipRow(names) {
+        const rel = make("div", "related");
+        for (const n of names) {
+          const b = make("button", "chip", n);
+          b.type = "button";
+          b.addEventListener("click", () => selectTerm(n));
+          rel.append(b);
+        }
+        return rel;
+      }
+      async function enrich(term, slot, my) {
+        let recs = [];
+        try {
+          recs = await apiSearch(term, 10);
+        } catch (e) {
+          return;
+        }
+        if (my !== token) return;
+        const hit = recs.find((r) =>
+          [r.name, r.primary, ...r.synonyms].some((n) => sameTerm(n, term)),
+        );
+        const cards = [];
+        if (hit) {
+          const seen = new Set([normalise(term)]),
+            aka = [];
+          for (const n of [hit.name, hit.primary, ...hit.synonyms]) {
+            const k = normalise(n);
+            if (k && !seen.has(k)) {
+              seen.add(k);
+              aka.push(n.toLowerCase());
+            }
+          }
+          if (aka.length)
+            cards.push(["Also known as", chipRow(aka.slice(0, 10))]);
+          const codes = hit.icd10
+            .slice(0, 6)
+            .map((c) => [c.code, c.name, "ICD-10-CM"]);
+          if (hit.icd9.code)
+            codes.push([hit.icd9.code, hit.icd9.text, "ICD-9-CM"]);
+          if (codes.length) {
+            const grid = make("div", "parts");
+            for (const c of codes) {
+              const it = make("div", "part");
+              it.append(
+                make("b", "", c[0]),
+                make("span", "", c[1]),
+                make("small", "", c[2]),
+              );
+              grid.append(it);
+            }
+            cards.push(["Classification", grid]);
+          }
+        } else if (recs.length) {
+          const names = mergeNames(
+            recs.map((r) => ({ n: r.name, s: 2 })),
+            9,
+          )
+            .map((x) => x.k)
+            .filter((k) => k !== normalise(term))
+            .slice(0, 8);
+          if (names.length && !DB[term])
+            cards.push(["Related conditions", chipRow(names)]);
+        } else if (!DB[term]) {
+          let sug = [];
+          try {
+            sug = (await suggestNames(term)).concat(
+              rankTerms(term).map((h) => ({ n: h.k, s: h.score })),
+            );
+          } catch (e) {
+            sug = rankTerms(term).map((h) => ({ n: h.k, s: h.score }));
+          }
+          if (my !== token) return;
+          const names = mergeNames(sug, 6)
+            .map((x) => x.k)
+            .filter((k) => k !== normalise(term))
+            .slice(0, 5);
+          if (names.length) cards.push(["Did you mean", chipRow(names)]);
+        }
+        if (!cards.length) return;
+        for (const [label, content] of cards) {
+          const c = make("section", "card");
+          c.append(make("p", "sectionlabel", label), content);
+          slot.append(c);
+        }
+        if (hit) {
+          const s = make("a", "src", "Source: NLM Clinical Tables");
+          s.href = "https://clinicaltables.nlm.nih.gov/";
+          s.target = "_blank";
+          s.rel = "noopener noreferrer";
+          slot.lastChild.append(s);
+        }
+      }
       // ---- online lookup ----
       const MED =
         /medic|disease|disorder|condition|symptom|anatom|patient|tissue|syndrome|clinical|blood|cell|organ|health|treatment|surg|bone|muscle|hormone|drug|infect|lung|heart|brain|nerve|skin|body|inflam/i;
@@ -1487,9 +1781,9 @@
       try {
         CACHE = JSON.parse(localStorage.getItem("medlex-cache") || "{}");
       } catch (e) {}
-      async function getJSON(u) {
+      async function getJSON(u, ms = 9000) {
         const c = new AbortController(),
-          t = setTimeout(() => c.abort(), 9000);
+          t = setTimeout(() => c.abort(), ms);
         try {
           const r = await fetch(u, { signal: c.signal });
           if (!r.ok) throw new Error(r.status);
@@ -1596,6 +1890,8 @@
         const term = normalise(raw),
           my = ++token;
         input.value = term;
+        sugToken++;
+        clearTimeout(sugTimer);
         suggestions.classList.remove("show");
         result.replaceChildren();
         syncDot();
@@ -1635,6 +1931,9 @@
           addCard("What it means", make("p", "meaning", data.meaning));
           addCard("In simple words", make("p", "simple", data.simple));
           addCard("Why it matters", make("p", "why", data.why));
+          const apiSlot = make("div");
+          result.append(apiSlot);
+          enrich(term, apiSlot, my);
           const rel = make("div", "related");
           for (const r of data.related) {
             const b = make("button", "chip", r);
@@ -1649,6 +1948,9 @@
           "What it means",
           make("p", "loading", "Looking it up…"),
         );
+        const apiSlot = make("div");
+        result.append(apiSlot);
+        enrich(term, apiSlot, my);
         lookup(term).then((r) => {
           if (my !== token) return;
           const body = slot.lastChild;
@@ -1682,17 +1984,44 @@
         if (e.key === "Enter") {
           e.preventDefault();
           selectTerm(input.value);
-        } else if (e.key === "Escape") suggestions.classList.remove("show");
+        } else if (e.key === "Escape") {
+          sugToken++;
+          suggestions.classList.remove("show");
+        }
       });
       document.getElementById("clearBtn").addEventListener("click", () => {
         buzz(7);
         token++;
+        sugToken++;
+        clearTimeout(sugTimer);
         input.value = "";
         suggestions.classList.remove("show");
-        result.replaceChildren();
+        showHome();
         syncDot();
         input.focus();
       });
+      // ---- home screen example tags ----
+      const HOME = [
+        "osteoporosis",
+        "tachycardia",
+        "pneumonia",
+        "gastroenteritis",
+        "dermatitis",
+        "arthralgia",
+        "myocarditis",
+        "hepatitis",
+      ];
+      function showHome() {
+        const row = make("div", "related");
+        for (const t of HOME) {
+          const b = make("button", "chip tag", t);
+          b.type = "button";
+          b.addEventListener("click", () => selectTerm(t));
+          row.append(b);
+        }
+        result.replaceChildren(row);
+      }
+      showHome();
       document.addEventListener("click", (e) => {
         if (!e.target.closest(".searchbox"))
           suggestions.classList.remove("show");
