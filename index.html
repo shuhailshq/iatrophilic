@@ -552,16 +552,6 @@
     </main>
     <script>
       "use strict";
-      if (
-        "serviceWorker" in navigator &&
-        (/^https:$/.test(location.protocol) ||
-          location.hostname === "localhost" ||
-          location.hostname === "127.0.0.1")
-      ) {
-        window.addEventListener("load", () =>
-          navigator.serviceWorker.register("./sw.js").catch(() => {}),
-        );
-      }
 
       const ROOTS = {
         osteo: "bone",
@@ -912,12 +902,8 @@ Object.assign(
           dbgLog(u, status, Date.now() - t0);
         }
       }
-      const NAMECACHE = new Map(),
-        RECCACHE = new Map();
       // light call: names only (suggestions and spelling candidates)
       async function apiNames(kind, terms, max) {
-        const key = kind + "|" + terms + "|" + max;
-        if (NAMECACHE.has(key)) return NAMECACHE.get(key);
         const d = await getJSON(
           NLM[kind] +
             "?terms=" +
@@ -927,16 +913,12 @@ Object.assign(
             "&df=consumer_name",
           5000,
         );
-        const out = (d[3] || [])
+        return (d[3] || [])
           .map((r) => String((r && r[0]) || "").trim())
           .filter(Boolean);
-        NAMECACHE.set(key, out);
-        return out;
       }
       // full call: names, synonyms, ICD codes (result details)
       async function apiSearch(kind, terms, max) {
-        const key = kind + "|" + terms + "|" + max;
-        if (RECCACHE.has(key)) return RECCACHE.get(key);
         const d = await getJSON(
           NLM[kind] +
             "?terms=" +
@@ -948,7 +930,7 @@ Object.assign(
           6000,
         );
         const ex = d[2] || {};
-        const out = (d[3] || []).map((row, i) => {
+        return (d[3] || []).map((row, i) => {
           const g = (f) => (ex[f] || [])[i];
           let icd10 = (Array.isArray(g("icd10cm")) ? g("icd10cm") : [])
             .filter((c) => c && c.code)
@@ -969,8 +951,6 @@ Object.assign(
             },
           };
         });
-        RECCACHE.set(key, out);
-        return out;
       }
       const findHit = (recs, term) =>
         recs.find((r) =>
@@ -1172,10 +1152,6 @@ Object.assign(
       // ---- definitions: MedlinePlus (NLM) -> Wikipedia -> Wiktionary ----
       const MED =
         /medic|disease|disorder|condition|symptom|anatom|patient|tissue|syndrome|clinical|blood|cell|organ|health|treatment|surg|bone|muscle|hormone|drug|infect|lung|heart|brain|nerve|skin|body|inflam/i;
-      let CACHE = {};
-      try {
-        CACHE = JSON.parse(localStorage.getItem("medlex-cache-v4") || "{}");
-      } catch (e) {}
       const clean = (t) =>
         t
           .replace(/\s*\([^)]*\)/g, (m) =>
@@ -1448,7 +1424,6 @@ Object.assign(
       }
       // never throws; null only when nothing at all could be found
       async function define(term, known, wikiP, medP) {
-        if (CACHE[term]) return CACHE[term];
         const w = await wikiP;
         let err = !!w.err,
           wk = w.r || null;
@@ -1485,16 +1460,7 @@ Object.assign(
             err = true;
           }
         }
-        const res = { text: out.text, src: out.src, url: out.url, img };
-        if (!err && img) {
-          CACHE[term] = res;
-          const ks = Object.keys(CACHE);
-          if (ks.length > 120) delete CACHE[ks[0]];
-          try {
-            localStorage.setItem("medlex-cache-v4", JSON.stringify(CACHE));
-          } catch (e) {}
-        }
-        return res;
+        return { text: out.text, src: out.src, url: out.url, img };
       }
       // ---- rendering ----
       function searchLink(term) {
