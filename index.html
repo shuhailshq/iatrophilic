@@ -385,6 +385,69 @@
       .tag:focus-visible {
         border-color: #7d7d86;
       }
+      .tagitem {
+        display: inline-flex;
+        align-items: center;
+        border: 1px solid var(--line);
+        background: var(--panel2);
+        border-radius: 99px;
+        transition: border-color 0.2s;
+      }
+      .tagitem:hover {
+        border-color: #55555c;
+      }
+      .tagitem .tag {
+        border: 0;
+        background: transparent;
+        padding: 7px 13px;
+        font-size: 13px;
+      }
+      .xbtn {
+        border: 0;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+        font: inherit;
+        font-size: 15px;
+        line-height: 1;
+        padding: 7px 12px 7px 2px;
+      }
+      .xbtn:hover {
+        color: var(--text);
+      }
+      .histhead {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+      .histhead .sectionlabel {
+        margin: 0;
+      }
+      .linkbtn {
+        background: none;
+        border: 0;
+        padding: 0;
+        font: inherit;
+        font-size: 12px;
+        letter-spacing: 0.04em;
+        color: #55555c;
+        cursor: pointer;
+      }
+      .linkbtn:hover {
+        color: var(--muted);
+      }
+      .more .chip {
+        display: inline-block;
+        font-size: 12px;
+        margin-bottom: 14px;
+      }
+      .emptynote {
+        font-size: 13px;
+        color: var(--muted);
+        margin: 0;
+      }
       #dbg {
         margin-top: 28px;
         padding: 10px 12px;
@@ -1674,6 +1737,7 @@ Object.assign(
         result.replaceChildren();
         syncDot();
         if (!term) return;
+        addRecent(term);
         buzz(7);
         const head = make("div", "termhead"),
           pill = make("span", "pill");
@@ -1707,7 +1771,7 @@ Object.assign(
           ),
           slot = make("div"),
           tail = make("div", "more");
-        tail.append(searchLink(term));
+        tail.append(suggestToggle(term), searchLink(term));
         result.append(slot, tail);
         const ui = { pill, mean, slot, parts, done: false };
         fill(term, my, ui).catch(() => {
@@ -1745,7 +1809,7 @@ Object.assign(
         input.focus();
       });
       // ---- home screen example tags ----
-      const HOME = [
+      const DEFAULT_HOME = [
         "osteoporosis",
         "tachycardia",
         "pneumonia",
@@ -1755,15 +1819,107 @@ Object.assign(
         "myocarditis",
         "hepatitis",
       ];
-      function showHome() {
-        const row = make("div", "related");
-        for (const t of HOME) {
-          const b = make("button", "chip tag", t);
-          b.type = "button";
-          b.addEventListener("click", () => selectTerm(t));
-          row.append(b);
+      const LS_SUGGESTED = "medlex-suggested",
+        LS_RECENT = "medlex-recent",
+        MAX_RECENT = 12;
+      function readStored(key, fallback) {
+        try {
+          const v = JSON.parse(localStorage.getItem(key));
+          if (Array.isArray(v)) return v.filter((x) => typeof x === "string");
+        } catch (e) {}
+        return fallback.slice();
+      }
+      function writeStored(key, list) {
+        try {
+          localStorage.setItem(key, JSON.stringify(list));
+        } catch (e) {}
+      }
+      let suggestedTerms = readStored(LS_SUGGESTED, DEFAULT_HOME);
+      let recentTerms = readStored(LS_RECENT, []);
+      function setSuggested(list) {
+        suggestedTerms = list;
+        writeStored(LS_SUGGESTED, list);
+      }
+      function addRecent(raw) {
+        const k = normalise(raw);
+        if (!k) return;
+        recentTerms = [k, ...recentTerms.filter((x) => x !== k)].slice(
+          0,
+          MAX_RECENT,
+        );
+        writeStored(LS_RECENT, recentTerms);
+      }
+      function tagItem(t, removable) {
+        const w = make("span", "tagitem");
+        const b = make("button", "chip tag", t);
+        b.type = "button";
+        b.addEventListener("click", () => selectTerm(t));
+        w.append(b);
+        if (removable) {
+          const x = make("button", "xbtn", "×");
+          x.type = "button";
+          x.setAttribute("aria-label", "Remove " + t + " from suggested");
+          x.addEventListener("click", () => {
+            buzz(7);
+            setSuggested(suggestedTerms.filter((y) => y !== t));
+            showHome();
+          });
+          w.append(x);
         }
-        result.replaceChildren(row);
+        return w;
+      }
+      function suggestToggle(term) {
+        const k = normalise(term);
+        const b = make("button", "chip");
+        b.type = "button";
+        const paint = () => {
+          b.textContent = suggestedTerms.includes(k)
+            ? "Remove from suggested"
+            : "Add to suggested";
+        };
+        b.addEventListener("click", () => {
+          buzz(7);
+          setSuggested(
+            suggestedTerms.includes(k)
+              ? suggestedTerms.filter((x) => x !== k)
+              : [...suggestedTerms, k],
+          );
+          paint();
+        });
+        paint();
+        return b;
+      }
+      function showHome() {
+        const sugCard = make("section", "card"),
+          sugRow = make("div", "related");
+        for (const t of suggestedTerms) sugRow.append(tagItem(t, true));
+        sugCard.append(make("p", "sectionlabel", "Suggested"));
+        if (suggestedTerms.length) sugCard.append(sugRow);
+        else
+          sugCard.append(
+            make("p", "emptynote", "No suggested tags. Search a term and tap Add to suggested."),
+          );
+
+        const recCard = make("section", "card"),
+          head = make("div", "histhead"),
+          recRow = make("div", "related");
+        head.append(make("p", "sectionlabel", "Recent searches"));
+        if (recentTerms.length) {
+          const clr = make("button", "linkbtn", "Clear history");
+          clr.type = "button";
+          clr.addEventListener("click", () => {
+            buzz(7);
+            recentTerms = [];
+            writeStored(LS_RECENT, []);
+            showHome();
+          });
+          head.append(clr);
+          for (const t of recentTerms) recRow.append(tagItem(t, false));
+          recCard.append(head, recRow);
+        } else {
+          recCard.append(head, make("p", "emptynote", "Terms you search will appear here."));
+        }
+        result.replaceChildren(sugCard, recCard);
       }
       showHome();
       document.addEventListener("click", (e) => {
